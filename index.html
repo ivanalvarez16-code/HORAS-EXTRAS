@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OverTime Tracker - Iván & Manuel</title>
+    <!-- Carga de React, Tailwind y Firebase desde CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .line-through-custom { text-decoration: line-through; opacity: 0.5; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        // --- ICONOS LUCIDE ---
+        const Icon = ({ name, className }) => {
+            useEffect(() => { lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        function App() {
+            const [perfilActivo, setPerfilActivo] = useState('ivan');
+            const [tipoRegistro, setTipoRegistro] = useState('jornada');
+            const [historial, setHistorial] = useState([]);
+            const [loading, setLoading] = useState(false);
+
+            // Estados Jornada
+            const [horaEntrada, setHoraEntrada] = useState('08:00');
+            const [horaSalida, setHoraSalida] = useState('17:00');
+            const [pausaComer, setPausaComer] = useState(true);
+            const [fechaJornada, setFechaJornada] = useState(new Date().toISOString().split('T')[0]);
+            const [ruta, setRuta] = useState('');
+
+            // Estados Descanso
+            const [fechaDescanso, setFechaDescanso] = useState(new Date().toISOString().split('T')[0]);
+            const [horasADescansar, setHorasADescansar] = useState(1);
+            const [motivoDescanso, setMotivoDescanso] = useState('Salida anticipada');
+
+            // --- LÓGICA DE PERSISTENCIA LOCAL (Para que no se borre al cerrar) ---
+            useEffect(() => {
+                const saved = localStorage.getItem('ot_tracker_data');
+                if (saved) setHistorial(JSON.parse(saved));
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('ot_tracker_data', JSON.stringify(historial));
+            }, [historial]);
+
+            // --- CÁLCULOS ---
+            const tiempoADecimal = (t) => {
+                const [h, m] = t.split(':').map(Number);
+                return h + m / 60;
+            };
+
+            const decimalATiempo = (dec) => {
+                const esNeg = dec < 0;
+                const abs = Math.abs(dec);
+                const h = Math.floor(abs);
+                const m = Math.round((abs - h) * 60);
+                return `${esNeg ? '-' : ''}${h}h ${m.toString().padStart(2, '0')}m`;
+            };
+
+            const ent = tiempoADecimal(horaEntrada);
+            let sal = tiempoADecimal(horaSalida);
+            if (sal < ent) sal += 24;
+            const difBruta = sal - ent;
+            const extrasBrutas = Math.max(0, difBruta - 8.0);
+            const extrasHoy = Math.max(0, extrasBrutas - (pausaComer ? 1.0 : 0.0));
+            const trabajadasHoy = Math.min(difBruta, 8.0) + extrasHoy;
+
+            const histFiltrado = historial.filter(r => r.usuario === perfilActivo);
+            const bolsa = histFiltrado.reduce((acc, r) => acc + (r.tipo === 'jornada' ? r.horasExtras : -r.horasDescanso), 0);
+
+            // --- ACCIONES ---
+            const guardarJornada = (e) => {
+                e.preventDefault();
+                if (historial.some(r => r.usuario === perfilActivo && r.fecha === fechaJornada && r.tipo === 'jornada')) return alert("Ya existe una jornada hoy");
+                
+                const nuevo = {
+                    id: Date.now(),
+                    usuario: perfilActivo,
+                    tipo: 'jornada',
+                    fecha: fechaJornada,
+                    entrada: horaEntrada,
+                    salida: horaSalida,
+                    pausaComer,
+                    ruta: ruta || 'Sin ruta',
+                    horasExtras: extrasHoy,
+                    horasTrabajadas: trabajadasHoy
+                };
+                setHistorial([nuevo, ...historial]);
+                setRuta('');
+            };
+
+            const guardarDescanso = (e) => {
+                e.preventDefault();
+                if (historial.some(r => r.usuario === perfilActivo && r.fecha === fechaDescanso && r.tipo === 'descanso')) return alert("Ya existe un descanso hoy");
+                
+                const nuevo = {
+                    id: Date.now(),
+                    usuario: perfilActivo,
+                    tipo: 'descanso',
+                    fecha: fechaDescanso,
+                    horasDescanso: Number(horasADescansar),
+                    motivo: motivoDescanso
+                };
+                setHistorial([nuevo, ...historial]);
+            };
+
+            const eliminar = (id) => setHistorial(historial.filter(r => r.id !== id));
+
+            const t = perfilActivo === 'ivan' ? 
+                { p: 'emerald', c: 'text-emerald-600', bg: 'bg-emerald-600', hover: 'hover:bg-emerald-700', grad: 'from-emerald-700 to-teal-800', name: 'Iván', emoji: '🧑‍💻' } :
+                { p: 'blue', c: 'text-blue-600', bg: 'bg-blue-600', hover: 'hover:bg-blue-700', grad: 'from-blue-700 to-indigo-800', name: 'Manuel', emoji: '👨‍💻' };
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <header className={`bg-gradient-to-r ${t.grad} text-white p-6 shadow-lg`}>
+                        <div className="max-w-4xl mx-auto flex justify-between items-center">
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tighter">OVERTIME TRACKER</h1>
+                                <p className="text-xs opacity-80">Jornada estándar: 8 horas</p>
+                            </div>
+                            <div className="flex bg-black/20 p-1 rounded-xl">
+                                <button onClick={() => setPerfilActivo('ivan')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${perfilActivo === 'ivan' ? 'bg-white text-emerald-800' : 'text-white'}`}>🧑‍💻 IVÁN</button>
+                                <button onClick={() => setPerfilActivo('manuel')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${perfilActivo === 'manuel' ? 'bg-white text-blue-800' : 'text-white'}`}>👨‍💻 MANUEL</button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-4xl mx-auto p-4 space-y-6">
+                        {/* BOLSA */}
+                        <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center">
+                            <div className="flex items-center space-x-4">
+                                <div className={`p-4 rounded-2xl ${bolsa >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                    <Icon name="zap" className="w-8 h-8" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-slate-400 uppercase">Bolsa Acumulada</p>
+                                    <h2 className="text-4xl font-black text-slate-800">{decimalATiempo(bolsa)}</h2>
+                                    <p className={`text-xs font-bold ${t.c}`}>Perfil: {t.name}</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* SELECTOR FORM */}
+                        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
+                            <button onClick={() => setTipoRegistro('jornada')} className={`flex-1 py-3 rounded-xl text-sm font-bold transition ${tipoRegistro === 'jornada' ? t.bg + ' text-white' : 'text-slate-500'}`}>📝 JORNADA</button>
+                            <button onClick={() => setTipoRegistro('descanso')} className={`flex-1 py-3 rounded-xl text-sm font-bold transition ${tipoRegistro === 'descanso' ? 'bg-rose-600 text-white' : 'text-slate-500'}`}>🏖️ DESCANSO</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* FORMULARIO */}
+                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                {tipoRegistro === 'jornada' ? (
+                                    <form onSubmit={guardarJornada} className="space-y-4">
+                                        <h3 className="font-bold text-slate-700 flex items-center"><Icon name="clock" className="w-4 h-4 mr-2" /> Nueva Jornada</h3>
+                                        <input type="date" value={fechaJornada} onChange={e => setFechaJornada(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl border-none outline-none focus:ring-2 focus:ring-slate-200" />
+                                        <input type="text" value={ruta} onChange={e => setRuta(e.target.value)} placeholder="¿Qué ruta has hecho?" className="w-full p-3 bg-slate-50 rounded-xl border-none outline-none focus:ring-2 focus:ring-slate-200" />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)} className="p-3 bg-slate-50 rounded-xl text-center font-bold" />
+                                            <input type="time" value={horaSalida} onChange={e => setHoraSalida(e.target.value)} className="p-3 bg-slate-50 rounded-xl text-center font-bold" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400">¿PAUSA COMIDA?</label>
+                                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                                <button type="button" onClick={() => setPausaComer(true)} className={`flex-1 py-2 rounded-lg text-xs font-bold ${pausaComer ? t.bg + ' text-white' : ''}`}>SÍ (-1h)</button>
+                                                <button type="button" onClick={() => setPausaComer(false)} className={`flex-1 py-2 rounded-lg text-xs font-bold ${!pausaComer ? t.bg + ' text-white' : ''}`}>NO</button>
+                                            </div>
+                                        </div>
+                                        <button className={`w-full py-4 ${t.bg} text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/10`}>GUARDAR JORNADA</button>
+                                    </form>
+                                ) : (
+                                    <form onSubmit={guardarDescanso} className="space-y-4">
+                                        <h3 className="font-bold text-slate-700 flex items-center text-rose-600"><Icon name="minus-circle" className="w-4 h-4 mr-2" /> Gastar Horas</h3>
+                                        <input type="date" value={fechaDescanso} onChange={e => setFechaDescanso(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl" />
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {[1,2,3,4,5,6,7,8].map(n => (
+                                                <button key={n} type="button" onClick={() => setHorasADescansar(n)} className={`py-2 rounded-lg font-bold border ${horasADescansar === n ? 'bg-rose-600 border-rose-600 text-white' : 'bg-white border-slate-200 text-slate-600'}`}>{n}h</button>
+                                            ))}
+                                        </div>
+                                        <select value={motivoDescanso} onChange={e => setMotivoDescanso(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl outline-none">
+                                            <option>Salida anticipada</option>
+                                            <option>Día libre completo (8h)</option>
+                                            <option>Asuntos propios</option>
+                                            <option>Médico</option>
+                                        </select>
+                                        <button className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold">REGISTRAR DESCANSO</button>
+                                    </form>
+                                )}
+                            </div>
+
+                            {/* CÓMPUTO EN VIVO */}
+                            <div className="bg-slate-900 text-white p-6 rounded-3xl flex flex-col justify-center text-center space-y-4 shadow-xl">
+                                <p className="text-xs font-bold opacity-50 uppercase tracking-widest">Cómputo hoy</p>
+                                <div className="text-5xl font-black">{decimalATiempo(trabajadasHoy)}</div>
+                                <div className={`inline-block mx-auto px-4 py-2 rounded-full font-bold text-sm ${extrasHoy > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'}`}>
+                                    Extras netas: +{decimalATiempo(extrasHoy)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* HISTORIAL */}
+                        <section className="space-y-4">
+                            <h3 className="font-bold text-slate-800 flex items-center uppercase tracking-tighter"><Icon name="calendar-days" className="w-5 h-5 mr-2" /> Historial de {t.name}</h3>
+                            {histFiltrado.length === 0 ? (
+                                <div className="p-10 border-2 border-dashed border-slate-200 rounded-3xl text-center text-slate-400 font-medium">No hay registros todavía</div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {histFiltrado.map(r => (
+                                        <div key={r.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group">
+                                            <div className="flex items-center space-x-4">
+                                                <div className={`p-3 rounded-xl ${r.tipo === 'jornada' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                    <Icon name={r.tipo === 'jornada' ? 'briefcase' : 'coffee'} className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{new Date(r.fecha).toLocaleDateString('es-ES', {weekday: 'short', day: '2-digit', month: 'short'})}</div>
+                                                    <div className="text-xs font-bold text-slate-400 flex items-center">
+                                                        {r.tipo === 'jornada' ? (
+                                                            <>🗺️ {r.ruta} <span className="mx-2">•</span> ⌚ {r.entrada}-{r.salida} {r.pausaComer && <span className="ml-2 line-through">Comida</span>}</>
+                                                        ) : r.motivo}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center space-x-4">
+                                                <div className={`text-sm font-black ${r.tipo === 'jornada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                    {r.tipo === 'jornada' ? `+${decimalATiempo(r.horasExtras)}` : `-${r.horasDescanso}h`}
+                                                </div>
+                                                <button onClick={() => eliminar(r.id)} className="text-slate-200 hover:text-rose-600 transition p-2 opacity-0 group-hover:opacity-100"><Icon name="trash-2" className="w-4 h-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </main>
+
+                    <footer className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 p-4 text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Iván & Manuel Overtime • Hecho con ❤️</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
